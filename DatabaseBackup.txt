@@ -154,3 +154,4 @@ USE sakila;
 SELECT * FROM actor;
 INSERT INTO actor (first_name, last_name) VALUES (’TEENAA’, ‘LEE’);
 SELECT * FROM actor;
+DELETE FROM actor WHERE first_name = 'TEENAA' AND last_name = 'LEE'LIMIT 1;
