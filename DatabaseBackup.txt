@@ -37,6 +37,57 @@ sudo firewall-cmd --reload
 마스터 서버 (10.1.1.23) 설정
 #####################################################################
 
+# 0. 샘플 데이터베이스 생성 (Sakila DB)
+
+# Sakila 데이터베이스 파일 다운로드
+
+wget https://downloads.mysql.com/docs/sakila-db.tar.gz
+
+# 다운로드한 파일 압축 해제
+
+tar xvzf sakila-db.tar.gz
+
+# MySQL에 root 사용자로 로그인
+
+mysql -u root -p
+
+# Sakila 데이터베이스 생성
+
+CREATE DATABASE sakila;
+
+EXIT;
+
+# 스키마와 데이터를 가져옴
+
+mysql -u root -p sakila < sakila-db/sakila-schema.sql
+mysql -u root -p sakila < sakila-db/sakila-data.sql
+
+# 다시 MySQL에 로그인하여 Sakila 데이터베이스 사용 및 테이블 확인
+
+mysql -u root -p
+
+USE sakila;
+SHOW TABLES;
+
+SELECT COUNT(*) FROM film;
+SELECT COUNT(*) FROM customer;
+
+########################
+
+mysqldump 등 로그인 시 사용자 인증 미리 입력 방법
+
+- u root -p 를 생략 가능
+
+# .my.cnf 파일 생성하고 보안을 위해 권한 설정
+touch ~/.my.cnf && chmod 600 ~/.my.cnf
+
+# 아래 내용 기재
+[client]
+user=사용자명
+password=비밀번호
+
+########################
+
 # 1. MySQL 설정 파일 수정
 sudo vi /etc/my.cnf
 // sudo vi /etc/mysql/my.cnf     동일함
