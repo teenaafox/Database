@@ -11,206 +11,146 @@ wordpress 이중화를 위해
 
 설치하고 웹서버1,2에 GlusterFS 9를 설치하고 웹서버1의 공유를 웹서버2의 글러스터 클라이언트로 공유 완료!
 
+
 데이터베이스 동기화 하는 방법
 
-MySQL의 마스터-슬레이브 복제를 설정하여 구현.
+- MySQL의 마스터-슬레이브 복제를 설정하여 구현
+
+1. MySQL Master: 10.1.1.23 (Mysql-server)
+2. MySQL Slave: 10.1.1.24 (Mysql-server)
 
 10.1.1.23을 마스터로, 10.1.1.24를 슬레이브로 설정
 
-<10.1.1.24 피씨 셋팅>
+**⇒ 재부팅해도 정상 작동 함^^**
 
-ip 셋팅
+<피씨 셋팅>
+- ip 셋팅
+- mysql 설치
+- 방화벽 설정
+sudo firewall-cmd --permanent --add-port=3306/tcp --zone=public
+sudo firewall-cmd --permanent --add-port=22/tcp --zone=public  
+sudo firewall-cmd --reload
 
-mysql 설치 + 방화벽 설정
-
-MySQL 원격접속 허용(bind-address 0.0.0.0) + mysqld 재시작
 
 1. **MySQL Master-Slave Replication Setup**
-
 ###################################################################### 
-
 마스터 서버 (10.1.1.23) 설정
-
 #####################################################################
 
 # 1. MySQL 설정 파일 수정
-
-sudo vi /etc/my.cnf.d/mysql-server.cnf
-
+sudo vi /etc/my.cnf
+// sudo vi /etc/mysql/my.cnf     동일함
 # [mysqld] 섹션에 다음 내용 추가
-
 server-id = 1
-
 log_bin = mysql-bin
-
-binlog_format = ROW
-
-binlog_do_db = wordpressDB
-
-gtid_mode = ON
-
-enforce_gtid_consistency = ON
+binlog_do_db =sakila
+bind-address = 0.0.0.0
+// binlog_format = ROW
+// gtid_mode = ON 
+// enforce_gtid_consistency = ON
 
 # 2. MySQL 재시작
-
 sudo systemctl restart mysqld
 
 # 3. 복제를 위한 MySQL 사용자 생성
-
 mysql -u root -p
-
-CREATE USER 'reUser'@'10.1.1.24' IDENTIFIED WITH mysql_native_password BY '1234';
-
+CREATE USER 'reUser'@'10.1.1.24' IDENTIFIED *WITH mysql_native_password* BY '1234';
 GRANT REPLICATION SLAVE ON *.* TO 'reUser'@'10.1.1.24';
-
 FLUSH PRIVILEGES;
 
-# 4. 현재 바이너리 로그 위치 확인
+# 4. DB 덤프
+mysql> FLUSH TABLES WITH READ LOCK;     
+$ mysqldump -u root -p sakila > sakila.sql
 
+# 5. DB 덤프 파일 전송 (10.1.1.23 -> 10.1.1.24)
+$ scp sakila.sql ‘rocky’@’10.1.1.24’:/home/rocky/
+mysql> UNLOCK TABLES;                        
+
+# 6. 현재 바이너리 로그 위치 확인
 SHOW MASTER STATUS;
-
 EXIT
 
-# 5. DB 덤프
-
-$ flush tables with read lock;     // 추가한 것. 미확인
-
-$ mysqldump -u root wordpressDB > wordpressDB.sql
-
-# 6. DB 덤프 파일 전송 (10.1.1.23 -> 10.1.1.24)
-
-$ scp wordpressDB.sql teenaa@10.1.1.24:/home/rocky/wordpressDB.sql
-
-$ unlock tables;                        // 추가한 것. 미확인
-
 #####################################################################
-
 # 슬레이브 서버 (10.1.1.24) 설정
-
 #####################################################################
 
 # 1. MySQL 설치
-
 sudo dnf install mysql-server
 
 # 2. MySQL 설정 파일 수정
-
-sudo vi /etc/my.cnf.d/mysql-server.cnf
-
+sudo vi /etc/my.cnf
 # [mysqld] 섹션에 다음 내용 추가
-
 server-id = 2
-
 log_bin = mysql-bin
-
-binlog_format = ROW
-
-replicate_do_db = wordpressDB
-
-gtid_mode = ON
-
-enforce_gtid_consistency = ON
-
-skip_slave_start = 0 // MySQL 서비스가 시작될 때 자동으로 슬레이브 프로세스도 시작
-
+// binlog_format = ROW
+// replicate_do_db = wordpressDB
+// gtid_mode = ON
+// enforce_gtid_consistency = ON
+// skip_slave_start = 0 // MySQL 서비스가 시작될 때 자동으로 슬레이브 프로세스도 시작
 // 재부팅 시에도 별도의 스크립트나 수동 개입 없이 자동으로 복제가 계속
 
 # 3. MySQL 시작
-
 sudo systemctl start mysqld
-
 sudo systemctl enable mysqld
 
+# 4. 복제를 위한 MySQL 사용자 생성   -> 슬래이브에서는 안해줘도 됨 
+# mysql -u root -p
+# CREATE USER 'reUser'@'%' IDENTIFIED BY '1234';
+# GRANT REPLICATION SLAVE ON *.* TO 'reUser'@'%' IDENTIFIED BY ‘1234’;
+# FLUSH PRIVILEGES;
+
 # 4. DB 생성 (깡통)
-
 mysql –u root
-
-CREATE wordpressDB
-
+CREATE DATABASE sakila;
 EXIT
 
 # 5. DB 덤프파일 적용
-
-$ mysql –u root wordpressDB < wordpressDB.sql
+$ mysql –u root -p sakila < sakila.sql
 
 # 6. Slave 중지
-
 $ mysql –u root
-
 STOP SLAVE;
 
 # 7. 복제 설정
-
-mysql -u root -p
-
 CHANGE MASTER TO
-
 MASTER_HOST='10.1.1.23',
-
 MASTER_PORT=3306,           // 추가함
-
 MASTER_USER='reUser',
-
 MASTER_PASSWORD='1234',
-
-MASTER_AUTO_POSITION=1;
-
-( // ↖ 대신 이전 방법
-
 MASTER_LOG_FILE='mysql-bin.000001',  # 마스터의 SHOW MASTER STATUS 결과에서 확인한 값
 MASTER_LOG_POS=157;  # 마스터의 SHOW MASTER STATUS 결과에서 확인한 값
 
-)
-
 # 8. 복제 시작
-
 START SLAVE;
 
 # 9. 복제 상태 확인
-
 pager more -d    // 페이지 단위로. nopager로 원상복귀
-
-SHOW SLAVE STATUS\G
+SHOW SLAVE STATUS\G;
 
 ************************** 1. row ***************************
-
 Slave_IO_State: Waiting for source to send event
-
 Master_Host: 192.168.111.103
-
 Master_User: reUser
-
 Master_Port: 3306
-
 Connect_Retry: 60
-
 Master_Log_File: mysql-bin.000003
-
 Read_Master_Log_Pos: 157
-
 Relay_Log_File: localhost-relay-bin.000002
-
 Relay_Log_Pos: 326
-
 Relay_Master_Log_File: mysql-bin.000003
-
 Slave_IO_Running: Yes <---- 체크 포인트
-
 Slave_SQL_Running: Yes <---- 체크 포인트
-
 Replicate_Do_DB: wordpressDB
-
 Replicate_Ignore_DB:
-
 Replicate_Do_Table:
 
-**DB 동기화 여부 확인 방법 (워드프레스 계정생성)**
+# 10. 마스터에서 복제 상태 확인
+SHOW PROCESSLIST\G;
 
-- 워드프레스에서 계정생성 후, 마스터 / 슬레이브에서 각각 생성된 계정 확인
 
-$ mysql –u root
+**DB 동기화 여부 확인 방법 **
 
-USE wordpressDB
-
-SELECT user_login FROM wp_users;
-
+USE sakila;
+SELECT * FROM actor;
+INSERT INTO actor (first_name, last_name) VALUES (’TEENAA’, ‘LEE’);
+SELECT * FROM actor;
